@@ -2,7 +2,6 @@
 
 namespace Raju\Streamer\Controllers;
 
-use Illuminate\Http\Request;
 use App\Http\Controllers\Controller;
 use Raju\Streamer\Helpers\VideoStream;
 

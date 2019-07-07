@@ -1,7 +1,6 @@
 <?php
 
 namespace Raju\Streamer\Helpers;
-// use Illuminate\Support\Facades\File;
 
 class VideoStream
 {
@@ -30,17 +29,12 @@ class VideoStream
 
     }
 
-    // public function hello()
-    // {
-    //     $video_path = storage_path('app/uploads/EndGame.mp4');
-    //     $stream = new VideoStream($video_path);
-    //     $stream->start();
-    //     //return storage_path('app/uploads/EndGame.mp4');
-    // }
-
     /**
+     *
+     *
      *      * Set proper header to serve the video content
-     *           */
+     *           
+     */
     private function setHeader()
     {
         ob_get_clean();
