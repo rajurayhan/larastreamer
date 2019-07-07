@@ -25,7 +25,7 @@ class StreamServiceProvider extends ServiceProvider
     {
         $this->loadRoutesFrom(__DIR__.'/routes.php');
         $this->publishes([
-                __DIR__.'/config/streamer.php' => config_path('larastreamer.php')
+                __DIR__.'/../config/streamer.php' => config_path('larastreamer.php')
             ], 'config');
     }
 }
