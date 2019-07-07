@@ -1,0 +1,19 @@
+{
+    "name": "rajurayhan/larastreamer",
+    "description": "A laravel package to stream video content.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Raju Rayhan",
+            "email": "raju.rayhan@yandex.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "autoload": {
+        "psr-4": {
+            "Raju\\Streamer\\": "src/"
+            }
+        },
+    "require": {}
+}
