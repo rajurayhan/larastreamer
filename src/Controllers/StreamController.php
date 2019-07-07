@@ -10,7 +10,7 @@ class StreamController extends Controller
     public function stream($filename)
     {
 
-        $videosDir      = config('streamer.basepath');
+        $videosDir      = config('larastreamer.basepath');
         if (file_exists($filePath = $videosDir."/".$filename)) {
             $stream = new VideoStream($filePath);
             return response()->stream(function() use ($stream) {

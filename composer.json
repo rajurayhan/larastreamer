@@ -15,5 +15,12 @@
             "Raju\\Streamer\\": "src/"
             }
         },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Raju\\Streamer\\StreamServiceProvider"
+            ]
+        }
+    },
     "require": {}
 }
