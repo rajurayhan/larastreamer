@@ -18,7 +18,7 @@ This package shipped with a built in streaming route -
     
 Just send filename on route and stream! 
 
-Or just build your own method folloing this- 
+Or just build your own method following this- 
     
     /* Controller */ 
     
