@@ -8,7 +8,7 @@ Install via Composer
 
 Publish Configuration
 
-    php artisan vendor:publish --tag=config
+    php artisan vendor:publish --tag=larastreamer
 
 ## Usage
 
