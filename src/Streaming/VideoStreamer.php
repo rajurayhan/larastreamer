@@ -9,11 +9,12 @@ use DateTimeImmutable;
 use DateTimeInterface;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Exceptions\UrlGenerationException;
 use Illuminate\Routing\UrlGenerator;
 use Illuminate\Support\Facades\Route;
 use Raju\Streamer\Contracts\Authorization;
+use Raju\Streamer\Contracts\Probe;
 use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
 use Raju\Streamer\Events\VideoStreamCompleted;
@@ -25,6 +26,9 @@ use Raju\Streamer\Exceptions\StreamException;
 use Raju\Streamer\Exceptions\UnauthorizedStream;
 use Raju\Streamer\Exceptions\VideoNotFound;
 use Raju\Streamer\Http\Responses\VideoStreamResponse;
+use Raju\Streamer\Metadata\VideoMeta;
+use Raju\Streamer\Playlist\DashManifestRewriter;
+use Raju\Streamer\Playlist\HlsPlaylistRewriter;
 use Raju\Streamer\Storage\ResolvedVideo;
 use Raju\Streamer\Support\CallableAuthorization;
 use Symfony\Component\HttpFoundation\Response;
@@ -37,7 +41,10 @@ final class VideoStreamer implements Streamer
         private readonly VideoStreamResponse $responses,
         private readonly Dispatcher $events,
         private readonly UrlGenerator $urls,
-        private Authorization $authorization,
+        private readonly Authorization $defaultAuthorization,
+        private readonly Application $app,
+        private readonly HlsPlaylistRewriter $hlsRewriter,
+        private readonly DashManifestRewriter $dashRewriter,
     ) {}
 
     public function disk(?string $disk = null): PendingStream
@@ -58,7 +65,11 @@ final class VideoStreamer implements Streamer
 
     public function signedUrl(string $path, DateTimeInterface|int|null $expires = null): string
     {
-        $name = (string) config('larastreamer.route.name', 'larastreamer.stream');
+        if (! $this->signedUrlsEnabled()) {
+            throw new StreamException('Signed stream URLs are disabled.');
+        }
+
+        $name = $this->stringConfig('larastreamer.route.name', 'larastreamer.stream');
 
         if (! Route::has($name)) {
             throw new StreamException('Signed stream routes are disabled.');
@@ -73,9 +84,11 @@ final class VideoStreamer implements Streamer
 
     public function authorize(callable|Authorization $callback): static
     {
-        $this->authorization = $callback instanceof Authorization
-            ? $callback
-            : new CallableAuthorization($callback);
+        $this->context()->setAuthorization(
+            $callback instanceof Authorization
+                ? $callback
+                : new CallableAuthorization($callback),
+        );
 
         return $this;
     }
@@ -114,31 +127,43 @@ final class VideoStreamer implements Streamer
         return $this->storage->temporaryUrl($video->disk, $video->path, $this->expiration($expires));
     }
 
+    public function meta(PendingStream $pending): VideoMeta
+    {
+        $video = $this->prepare($pending);
+        $duration = null;
+        $codec = null;
+
+        if ($this->app->bound(Probe::class)) {
+            $probed = $this->app->make(Probe::class)->inspect($video);
+            $duration = isset($probed['duration']) && is_numeric($probed['duration']) ? (float) $probed['duration'] : null;
+            $codec = isset($probed['codec']) && is_string($probed['codec']) ? $probed['codec'] : null;
+        }
+
+        return new VideoMeta(
+            size: $video->size,
+            mime: $video->mime,
+            lastModified: $video->lastModified,
+            etag: $video->etag,
+            duration: $duration,
+            codec: $codec,
+        );
+    }
+
     /**
-     * @return array{url: string, type: string, mime: string, expires_at: string|null}
+     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
      */
     public function embedData(PendingStream $pending, ?DateTimeInterface $expires = null): array
     {
         $video = $this->prepare($pending);
         $expiration = $this->expiration($expires);
 
-        if (! $video->isLocal) {
-            $url = $this->storage->temporaryUrl($video->disk, $video->path, $expiration);
-        } elseif (Route::has((string) config('larastreamer.route.name', 'larastreamer.stream'))) {
-            try {
-                $url = $this->signedUrl($this->embedPath($pending), $expiration);
-            } catch (UrlGenerationException|StreamException) {
-                $url = $video->path;
-            }
-        } else {
-            $url = $video->path;
-        }
-
         return [
-            'url' => $url,
+            'url' => $this->publicUrl($video, $pending, $expiration),
             'type' => 'video',
             'mime' => $video->mime,
             'expires_at' => $expiration->format(DATE_ATOM),
+            'kind' => StreamKind::fromPath($video->path)->value,
+            'captions' => $this->embedCaptions($pending, $expiration),
         ];
     }
 
@@ -147,21 +172,34 @@ final class VideoStreamer implements Streamer
         try {
             $video = $this->prepare($pending);
             $options = StreamOptions::fromConfig()->withDisposition($attachment ? 'attachment' : 'inline');
+            $validators = $this->responses->validatorHeaders($video->etag, $video->lastModified);
 
-            if ($attachment) {
-                $filename = basename($video->path);
-                $disposition = 'attachment; filename="'.$filename.'"';
-            } else {
-                $disposition = null;
-            }
+            $disposition = $attachment ? 'attachment; filename="'.basename($video->path).'"' : null;
 
-            if (! $video->isLocal && $this->remoteStrategy() === DeliveryStrategy::Redirect && ! $attachment) {
+            if (! $video->isLocal && $this->remoteStrategy() === DeliveryStrategy::Redirect) {
+                if ($attachment) {
+                    return $this->redirectDownload($pending, $video, 'attachment; filename="'.basename($video->path).'"');
+                }
+
                 return $this->redirect($pending);
             }
 
+            if ($this->shouldRewritePlaylist($video) && ! $attachment) {
+                return $this->playlist($pending, $video);
+            }
+
             $range = $this->parseRange($video->size);
+            $range = $this->applyIfRange($range, $video);
+
+            if ($range === null && $this->noneMatch($video)) {
+                $this->fireStarted($video, null, $this->strategy($video));
+                $this->fireCompleted($video, null, $this->strategy($video));
+
+                return $this->responses->notModified($options, $validators);
+            }
+
             $strategy = $this->strategy($video);
-            $extra = $disposition !== null ? ['Content-Disposition' => $disposition] : [];
+            $extra = $disposition !== null ? ['Content-Disposition' => $disposition, ...$validators] : $validators;
 
             $this->fireStarted($video, $range, $strategy);
 
@@ -173,15 +211,19 @@ final class VideoStreamer implements Streamer
             }
 
             if ($strategy === DeliveryStrategy::Offload && is_string($video->localPath)) {
-                $response = $this->offload($video, $options, $extra);
+                $response = $this->offload($video, $options, $extra, $range);
                 $this->fireCompleted($video, $range, $strategy);
 
                 return $response;
             }
 
             if ($video->isLocal && is_string($video->localPath)) {
+                if ($range === null) {
+                    $this->request()->headers->remove('Range');
+                }
+
                 $response = $this->responses->file($video->localPath, $video->mime, $options, $extra);
-                $this->fireCompleted($video, $range, DeliveryStrategy::File);
+                $this->completeAfterSend($video, $range, DeliveryStrategy::File);
 
                 return $response;
             }
@@ -207,6 +249,128 @@ final class VideoStreamer implements Streamer
         }
     }
 
+    private function playlist(PendingStream $pending, ResolvedVideo $video): Response
+    {
+        $contents = $this->readContents($video);
+        $kind = StreamKind::fromPath($video->path);
+        $options = StreamOptions::fromConfig()->withPlaylistCaching();
+        $validators = $this->responses->validatorHeaders($video->etag, $video->lastModified);
+
+        $rewritten = match ($kind) {
+            StreamKind::Dash => $this->dashRewriter->rewrite(
+                $contents,
+                $video->path,
+                fn (string $path): string => $this->segmentUrl($video, $path),
+            ),
+            default => $this->hlsRewriter->rewrite(
+                $contents,
+                $video->path,
+                fn (string $path): string => $this->segmentUrl($video, $path),
+            ),
+        };
+
+        $this->fireStarted($video, null, DeliveryStrategy::Playlist);
+        $this->fireCompleted($video, null, DeliveryStrategy::Playlist);
+
+        return $this->responses->playlist(
+            $rewritten,
+            $video->mime,
+            $options,
+            $this->request()->isMethod('HEAD'),
+            $validators,
+        );
+    }
+
+    private function segmentUrl(ResolvedVideo $playlist, string $path): string
+    {
+        if ($playlist->isLocal) {
+            return $this->signedUrl($path);
+        }
+
+        return $this->storage->temporaryUrl($playlist->disk, $path, $this->expiration(null));
+    }
+
+    private function readContents(ResolvedVideo $video): string
+    {
+        if (is_string($video->localPath)) {
+            $contents = file_get_contents($video->localPath);
+
+            if (! is_string($contents) || $contents === '') {
+                throw new VideoNotFound;
+            }
+
+            return $contents;
+        }
+
+        return $this->storage->read($video->disk, $video->path);
+    }
+
+    private function redirectDownload(PendingStream $pending, ResolvedVideo $video, string $disposition): Response
+    {
+        $url = $this->storage->temporaryUrl(
+            $video->disk,
+            $video->path,
+            $this->expiration(null),
+            ['ResponseContentDisposition' => $disposition],
+        );
+
+        $this->fireStarted($video, null, DeliveryStrategy::Redirect);
+        $this->fireCompleted($video, null, DeliveryStrategy::Redirect);
+
+        return redirect()->away($url);
+    }
+
+    /**
+     * @return list<array{src: string, srclang?: string, label?: string, default?: bool}>
+     */
+    private function embedCaptions(PendingStream $pending, DateTimeInterface $expiration): array
+    {
+        $tracks = [];
+
+        foreach ($pending->captionTracks() as $caption) {
+            $src = $caption['src'];
+
+            if ($src === '') {
+                continue;
+            }
+
+            $captionPending = new PendingStream($this);
+
+            if ($pending->diskName() !== null) {
+                $captionPending->disk($pending->diskName());
+            }
+
+            $captionPending->file($src);
+
+            try {
+                $resolved = $this->prepare($captionPending);
+                $caption['src'] = $this->publicUrl($resolved, $captionPending, $expiration);
+                $tracks[] = $caption;
+            } catch (StreamException) {
+                continue;
+            }
+        }
+
+        return $tracks;
+    }
+
+    private function publicUrl(ResolvedVideo $video, PendingStream $pending, DateTimeInterface $expiration): string
+    {
+        if (! $video->isLocal) {
+            return $this->storage->temporaryUrl($video->disk, $video->path, $expiration);
+        }
+
+        if (! $this->signedUrlsEnabled()) {
+            throw new StreamException('Unable to build an embed URL. Enable signed stream routes or pass a public url.');
+        }
+
+        try {
+            return $this->signedUrl($this->embedPath($pending), $expiration);
+        } catch (StreamException $exception) {
+            throw new StreamException('Unable to build an embed URL. Enable signed stream routes or pass a public url.', previous: $exception);
+        }
+    }
+
     private function prepare(PendingStream $pending): ResolvedVideo
     {
         $path = $pending->path();
@@ -226,7 +390,9 @@ final class VideoStreamer implements Streamer
 
     private function guard(PendingStream $pending, string $path): void
     {
-        $authorization = $pending->authorizer() ?? $this->authorization;
+        $authorization = $pending->authorizer()
+            ?? $this->context()->authorization()
+            ?? $this->defaultAuthorization;
 
         $user = $this->request()->user();
 
@@ -241,7 +407,7 @@ final class VideoStreamer implements Streamer
             return $path;
         }
 
-        $prefix = trim((string) config('larastreamer.storage.path', ''), '/');
+        $prefix = trim($this->stringConfig('larastreamer.storage.path', ''), '/');
 
         if ($prefix === '') {
             return $path;
@@ -274,16 +440,95 @@ final class VideoStreamer implements Streamer
         return is_string($header) && $header !== '' ? $header : null;
     }
 
+    private function applyIfRange(?Range $range, ResolvedVideo $video): ?Range
+    {
+        if (! $range instanceof Range) {
+            return null;
+        }
+
+        $ifRange = $this->request()->headers->get('If-Range');
+
+        if (! is_string($ifRange) || $ifRange === '') {
+            return $range;
+        }
+
+        return $this->ifRangeMatches($ifRange, $video) ? $range : null;
+    }
+
+    private function noneMatch(ResolvedVideo $video): bool
+    {
+        $header = $this->request()->headers->get('If-None-Match');
+
+        if (! is_string($header) || $header === '' || $this->rangeHeader() !== null) {
+            return false;
+        }
+
+        return $this->etagMatches($header, $video->etag);
+    }
+
+    private function ifRangeMatches(string $ifRange, ResolvedVideo $video): bool
+    {
+        $ifRange = trim($ifRange);
+
+        if ($this->looksLikeHttpDate($ifRange)) {
+            if ($video->lastModified === null) {
+                return false;
+            }
+
+            $time = strtotime($ifRange);
+
+            return $time !== false && $video->lastModified <= $time;
+        }
+
+        return $this->etagMatches($ifRange, $video->etag);
+    }
+
+    private function etagMatches(string $header, string $etag): bool
+    {
+        if (trim($header) === '*') {
+            return true;
+        }
+
+        $normalized = $this->normalizeEtag($etag);
+
+        foreach (explode(',', $header) as $candidate) {
+            if ($this->normalizeEtag(trim($candidate)) === $normalized) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function normalizeEtag(string $etag): string
+    {
+        if (str_starts_with($etag, 'W/')) {
+            $etag = substr($etag, 2);
+        }
+
+        return trim($etag, " \t\"");
+    }
+
+    private function looksLikeHttpDate(string $value): bool
+    {
+        return str_contains($value, 'GMT') || str_contains($value, ',') || strtotime($value) !== false && ! str_contains($value, '"');
+    }
+
     /**
      * @param  array<string, string>  $extra
      */
-    private function offload(ResolvedVideo $video, StreamOptions $options, array $extra): Response
+    private function offload(ResolvedVideo $video, StreamOptions $options, array $extra, ?Range $range): Response
     {
-        $driver = OffloadDriver::tryFrom((string) config('larastreamer.offload.driver', 'nginx')) ?? OffloadDriver::Nginx;
+        $driver = OffloadDriver::tryFrom($this->stringConfig('larastreamer.offload.driver', 'nginx')) ?? OffloadDriver::Nginx;
 
         if ($driver === OffloadDriver::Nginx) {
-            $prefix = rtrim((string) config('larastreamer.offload.prefix', '/internal-videos/'), '/');
+            $prefix = rtrim($this->stringConfig('larastreamer.offload.prefix', '/internal-videos/'), '/');
             $value = $prefix.'/'.ltrim($video->path, '/');
+            $extra['Accept-Ranges'] = 'bytes';
+
+            if ($range instanceof Range) {
+                $extra['X-Accel-Buffering'] = 'no';
+            }
         } else {
             $value = $video->localPath ?? $video->path;
         }
@@ -300,16 +545,27 @@ final class VideoStreamer implements Streamer
         return $video->isLocal ? DeliveryStrategy::File : DeliveryStrategy::Proxy;
     }
 
+    private function shouldRewritePlaylist(ResolvedVideo $video): bool
+    {
+        $kind = StreamKind::fromPath($video->path);
+
+        return match ($kind) {
+            StreamKind::Hls => (bool) config('larastreamer.hls.enabled', false) && (bool) config('larastreamer.hls.rewrite', true),
+            StreamKind::Dash => (bool) config('larastreamer.dash.enabled', false) && (bool) config('larastreamer.dash.rewrite', true),
+            default => false,
+        };
+    }
+
     private function remoteStrategy(): DeliveryStrategy
     {
-        $strategy = (string) config('larastreamer.storage.remote.strategy', 'redirect');
+        $strategy = $this->stringConfig('larastreamer.storage.remote.strategy', 'redirect');
 
         return $strategy === 'proxy' ? DeliveryStrategy::Proxy : DeliveryStrategy::Redirect;
     }
 
     private function defaultDisk(): string
     {
-        return (string) config('larastreamer.storage.disk', 'local');
+        return $this->stringConfig('larastreamer.storage.disk', 'local');
     }
 
     private function isAbsoluteLocalPath(string $path): bool
@@ -335,7 +591,7 @@ final class VideoStreamer implements Streamer
             return (new DateTimeImmutable)->add(new DateInterval('PT'.$expires.'S'));
         }
 
-        $seconds = max(1, (int) config('larastreamer.security.default_expiration', 1800));
+        $seconds = max(1, $this->intConfig('larastreamer.security.default_expiration', 1800));
 
         return (new DateTimeImmutable)->add(new DateInterval('PT'.$seconds.'S'));
     }
@@ -349,6 +605,52 @@ final class VideoStreamer implements Streamer
         }
 
         return ltrim($path, '/');
+    }
+
+    private function signedUrlsEnabled(): bool
+    {
+        return $this->boolConfig('larastreamer.security.signed_urls', true);
+    }
+
+    private function stringConfig(string $key, string $default): string
+    {
+        $value = config($key, $default);
+
+        return is_string($value) ? $value : $default;
+    }
+
+    private function boolConfig(string $key, bool $default): bool
+    {
+        $value = config($key, $default);
+
+        return is_bool($value) ? $value : $default;
+    }
+
+    private function intConfig(string $key, int $default): int
+    {
+        $value = config($key, $default);
+
+        if (is_int($value)) {
+            return $value;
+        }
+
+        if (is_string($value) && is_numeric($value)) {
+            return (int) $value;
+        }
+
+        return $default;
+    }
+
+    private function context(): StreamContext
+    {
+        return $this->app->make(StreamContext::class);
+    }
+
+    private function completeAfterSend(ResolvedVideo $video, ?Range $range, DeliveryStrategy $strategy): void
+    {
+        $this->app->terminating(function () use ($video, $range, $strategy): void {
+            $this->fireCompleted($video, $range, $strategy);
+        });
     }
 
     private function userId(): mixed
