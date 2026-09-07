@@ -30,7 +30,7 @@ it('rejects caption traversal', function (): void {
 });
 
 it('renders player tracks', function (): void {
-    $html = $this->blade('<x-larastreamer::player url="https://cdn.example.test/clip.mp4" mime="video/mp4" :captions="[[\'src\' => \'https://cdn.example.test/en.vtt\', \'srclang\' => \'en\', \'label\' => \'English\]]" />');
+    $html = $this->blade('<x-larastreamer::player url="https://cdn.example.test/clip.mp4" mime="video/mp4" :captions="[[\'src\' => \'https://cdn.example.test/en.vtt\', \'srclang\' => \'en\', \'label\' => \'English\']]" />');
 
     expect((string) $html)
         ->toContain('<track')

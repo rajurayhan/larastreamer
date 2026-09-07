@@ -5,8 +5,8 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\Event;
 use Raju\Streamer\Events\VideoStreamCompleted;
 use Raju\Streamer\Events\VideoStreamStarted;
+use Raju\Streamer\Exceptions\StreamException;
 use Raju\Streamer\Facades\Streamer;
-use Raju\Streamer\Helpers\VideoStream;
 
 it('streams a full video with a 200 response', function (): void {
     $response = $this->get('/__stream?file=clip.mp4');
@@ -59,14 +59,8 @@ it('dispatches started and completed events', function (): void {
     Event::assertDispatched(VideoStreamCompleted::class);
 });
 
-it('delegates the deprecated VideoStream shim to the new layer', function (): void {
-    $path = $this->writeFixture('legacy.mp4', 1024);
-
-    $response = (new VideoStream($path))->start();
-
-    expect($response->getStatusCode())->toBe(200)
-        ->and($response->headers->get('Accept-Ranges'))->toBe('bytes')
-        ->and($response->headers->get('Content-Type'))->toBe('video/mp4');
+it('does not provide the removed VideoStream class', function (): void {
+    expect(class_exists('Raju\\Streamer\\Helpers\\VideoStream'))->toBeFalse();
 });
 
 it('renders the blade player', function (): void {
@@ -78,11 +72,7 @@ it('renders the blade player', function (): void {
         ->toContain('video/mp4');
 });
 
-it('returns embed data for a local file', function (): void {
-    $data = Streamer::disk('videos')->file('clip.mp4')->embedData();
-
-    expect($data['url'])->toBe('clip.mp4')
-        ->and($data['type'])->toBe('video')
-        ->and($data['mime'])->toBe('video/mp4')
-        ->and($data['expires_at'])->not->toBeNull();
+it('refuses to embed a local file as a raw disk path', function (): void {
+    expect(fn () => Streamer::disk('videos')->file('clip.mp4')->embedData())
+        ->toThrow(StreamException::class);
 });
