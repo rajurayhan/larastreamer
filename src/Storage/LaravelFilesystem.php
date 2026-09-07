@@ -55,6 +55,8 @@ final class LaravelFilesystem implements StorageResolver
             throw new VideoNotFound;
         }
 
+        $lastModified = $this->lastModified($adapter, $path, $localPath);
+
         return new ResolvedVideo(
             disk: $disk,
             path: $path,
@@ -62,6 +64,8 @@ final class LaravelFilesystem implements StorageResolver
             mime: $mime ?? '',
             localPath: $localPath,
             isLocal: $this->isLocal($disk),
+            lastModified: $lastModified,
+            etag: ResolvedVideo::etagFor($size, $lastModified, $path),
         );
     }
 
@@ -76,7 +80,25 @@ final class LaravelFilesystem implements StorageResolver
         return $stream;
     }
 
-    public function temporaryUrl(string $disk, string $path, DateTimeInterface $expiration): string
+    public function read(string $disk, string $path): string
+    {
+        try {
+            $contents = $this->adapter($disk)->get($path);
+        } catch (Throwable $exception) {
+            throw new VideoNotFound(previous: $exception);
+        }
+
+        if (! is_string($contents) || $contents === '') {
+            throw new VideoNotFound;
+        }
+
+        return $contents;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function temporaryUrl(string $disk, string $path, DateTimeInterface $expiration, array $options = []): string
     {
         $adapter = $this->adapter($disk);
 
@@ -85,7 +107,7 @@ final class LaravelFilesystem implements StorageResolver
         }
 
         try {
-            return $adapter->temporaryUrl($path, $expiration);
+            return $adapter->temporaryUrl($path, $expiration, $options);
         } catch (Throwable $exception) {
             throw new StreamException('Unable to create a temporary URL for this disk.', previous: $exception);
         }
@@ -121,6 +143,9 @@ final class LaravelFilesystem implements StorageResolver
             throw new VideoNotFound;
         }
 
+        $mtime = filemtime($real);
+        $lastModified = $mtime === false ? null : $mtime;
+
         return new ResolvedVideo(
             disk: $disk,
             path: $this->relativeDisplayPath($real),
@@ -128,6 +153,8 @@ final class LaravelFilesystem implements StorageResolver
             mime: $mime ?? '',
             localPath: $real,
             isLocal: true,
+            lastModified: $lastModified,
+            etag: ResolvedVideo::etagFor($size, $lastModified, $real),
         );
     }
 
@@ -257,6 +284,21 @@ final class LaravelFilesystem implements StorageResolver
         }
 
         return false;
+    }
+
+    private function lastModified(Filesystem $adapter, string $path, ?string $localPath): ?int
+    {
+        if (is_string($localPath) && is_file($localPath)) {
+            $mtime = filemtime($localPath);
+
+            return $mtime === false ? null : $mtime;
+        }
+
+        try {
+            return $adapter->lastModified($path);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function adapter(string $disk): Filesystem
