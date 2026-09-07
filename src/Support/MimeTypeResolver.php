@@ -78,7 +78,7 @@ final class MimeTypeResolver
         $extension = $this->extension($path);
         $mapped = self::EXTENSION_MAP[$extension] ?? null;
 
-        if (is_string($detectedMime) && $detectedMime !== '' && ! in_array($detectedMime, self.GENERIC_MIMES, true)) {
+        if (is_string($detectedMime) && $detectedMime !== '' && ! in_array($detectedMime, self::GENERIC_MIMES, true)) {
             if (
                 $mapped !== null
                 && in_array($extension, self::TEXTUAL_EXTENSIONS, true)
