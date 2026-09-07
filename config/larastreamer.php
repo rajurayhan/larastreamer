@@ -40,6 +40,23 @@ return [
 
     'allowed_extensions' => ['mp4', 'webm', 'ogv', 'mov', 'avi', 'mpeg', 'mpg'],
 
+    'hls' => [
+        'enabled' => false,
+        'rewrite' => true,
+        'player' => 'native', // native | hlsjs
+        'hlsjs_src' => 'https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js',
+    ],
+
+    'dash' => [
+        'enabled' => false,
+        'rewrite' => true,
+    ],
+
+    'captions' => [
+        'enabled' => true,
+        'allowed_extensions' => ['vtt', 'srt'],
+    ],
+
     'offload' => [
         'enabled' => false,
         'driver' => 'nginx', // nginx | apache
