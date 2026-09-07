@@ -10,4 +10,5 @@ enum DeliveryStrategy: string
     case Offload = 'offload';
     case Proxy = 'proxy';
     case Redirect = 'redirect';
+    case Playlist = 'playlist';
 }
