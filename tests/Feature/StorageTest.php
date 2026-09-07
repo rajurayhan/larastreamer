@@ -32,6 +32,7 @@ it('creates a mocked s3 temporary url', function (): void {
         $mock->shouldReceive('directoryExists')->with('clip.mp4')->andReturn(false);
         $mock->shouldReceive('size')->with('clip.mp4')->andReturn(2048);
         $mock->shouldReceive('mimeType')->with('clip.mp4')->andReturn('video/mp4');
+        $mock->shouldReceive('lastModified')->with('clip.mp4')->andReturn(1_700_000_000);
         $mock->shouldReceive('temporaryUrl')
             ->once()
             ->andReturn('https://s3.example.test/clip.mp4?X-Amz-Signature=abc');
@@ -61,6 +62,7 @@ it('redirects remote disks by default', function (): void {
         $mock->shouldReceive('directoryExists')->with('clip.mp4')->andReturn(false);
         $mock->shouldReceive('size')->with('clip.mp4')->andReturn(2048);
         $mock->shouldReceive('mimeType')->with('clip.mp4')->andReturn('video/mp4');
+        $mock->shouldReceive('lastModified')->with('clip.mp4')->andReturn(1_700_000_000);
         $mock->shouldReceive('temporaryUrl')
             ->andReturn('https://s3.example.test/clip.mp4?X-Amz-Signature=abc');
     });
@@ -89,6 +91,7 @@ it('redirects remote stream() calls when the default strategy is redirect', func
         $mock->shouldReceive('directoryExists')->with('clip.mp4')->andReturn(false);
         $mock->shouldReceive('size')->with('clip.mp4')->andReturn(2048);
         $mock->shouldReceive('mimeType')->with('clip.mp4')->andReturn('video/mp4');
+        $mock->shouldReceive('lastModified')->with('clip.mp4')->andReturn(1_700_000_000);
         $mock->shouldReceive('temporaryUrl')
             ->andReturn('https://s3.example.test/clip.mp4?X-Amz-Signature=abc');
     });
