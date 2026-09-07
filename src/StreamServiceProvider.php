@@ -9,8 +9,11 @@ use Raju\Streamer\Contracts\Authorization;
 use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
 use Raju\Streamer\Http\Responses\VideoStreamResponse;
+use Raju\Streamer\Playlist\DashManifestRewriter;
+use Raju\Streamer\Playlist\HlsPlaylistRewriter;
 use Raju\Streamer\Storage\LaravelFilesystem;
 use Raju\Streamer\Streaming\RangeParser;
+use Raju\Streamer\Streaming\StreamContext;
 use Raju\Streamer\Streaming\VideoStreamer;
 use Raju\Streamer\Support\AllowAllAuthorization;
 use Raju\Streamer\Support\MimeTypeResolver;
@@ -24,8 +27,11 @@ final class StreamServiceProvider extends ServiceProvider
         $this->app->singleton(MimeTypeResolver::class);
         $this->app->singleton(RangeParser::class);
         $this->app->singleton(VideoStreamResponse::class);
+        $this->app->singleton(HlsPlaylistRewriter::class);
+        $this->app->singleton(DashManifestRewriter::class);
         $this->app->singleton(StorageResolver::class, LaravelFilesystem::class);
         $this->app->singleton(Authorization::class, AllowAllAuthorization::class);
+        $this->app->scoped(StreamContext::class);
         $this->app->singleton(Streamer::class, VideoStreamer::class);
         $this->app->alias(Streamer::class, 'larastreamer');
     }

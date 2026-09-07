@@ -11,6 +11,7 @@ final readonly class StreamOptions
         public int $maxAge = 3600,
         public string $cache = 'private',
         public string $disposition = 'inline',
+        public bool $noStore = false,
     ) {}
 
     public static function fromConfig(): self
@@ -32,11 +33,27 @@ final readonly class StreamOptions
             maxAge: $this->maxAge,
             cache: $this->cache,
             disposition: $disposition === 'attachment' ? 'attachment' : 'inline',
+            noStore: $this->noStore,
+        );
+    }
+
+    public function withPlaylistCaching(): self
+    {
+        return new self(
+            bufferSize: $this->bufferSize,
+            maxAge: 0,
+            cache: 'private',
+            disposition: $this->disposition,
+            noStore: true,
         );
     }
 
     public function cacheControl(): string
     {
+        if ($this->noStore) {
+            return 'private, max-age=0, no-store';
+        }
+
         return "{$this->cache}, max-age={$this->maxAge}";
     }
 }

@@ -16,7 +16,12 @@ interface StorageResolver
      */
     public function readStream(string $disk, string $path);
 
-    public function temporaryUrl(string $disk, string $path, DateTimeInterface $expiration): string;
+    public function read(string $disk, string $path): string;
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function temporaryUrl(string $disk, string $path, DateTimeInterface $expiration, array $options = []): string;
 
     public function isLocal(string $disk): bool;
 }

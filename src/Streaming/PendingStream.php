@@ -6,6 +6,7 @@ namespace Raju\Streamer\Streaming;
 
 use DateTimeInterface;
 use Raju\Streamer\Contracts\Authorization;
+use Raju\Streamer\Metadata\VideoMeta;
 use Raju\Streamer\Support\CallableAuthorization;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -18,6 +19,11 @@ final class PendingStream
     private bool $usesDefaultPrefix = true;
 
     private ?Authorization $authorizer = null;
+
+    /**
+     * @var list<array{src: string, srclang?: string, label?: string, default?: bool}>
+     */
+    private array $captions = [];
 
     public function __construct(private readonly VideoStreamer $streamer) {}
 
@@ -32,6 +38,16 @@ final class PendingStream
     public function file(string $path): self
     {
         $this->path = $path;
+
+        return $this;
+    }
+
+    /**
+     * @param  list<array{src: string, srclang?: string, label?: string, default?: bool}>  $captions
+     */
+    public function captions(array $captions): self
+    {
+        $this->captions = $captions;
 
         return $this;
     }
@@ -65,8 +81,13 @@ final class PendingStream
         return $this->streamer->temporaryUrl($this, $expires);
     }
 
+    public function meta(): VideoMeta
+    {
+        return $this->streamer->meta($this);
+    }
+
     /**
-     * @return array{url: string, type: string, mime: string, expires_at: string|null}
+     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
      */
     public function embedData(?DateTimeInterface $expires = null): array
     {
@@ -81,6 +102,14 @@ final class PendingStream
     public function path(): ?string
     {
         return $this->path;
+    }
+
+    /**
+     * @return list<array{src: string, srclang?: string, label?: string, default?: bool}>
+     */
+    public function captionTracks(): array
+    {
+        return $this->captions;
     }
 
     public function usesDefaultPrefix(): bool
