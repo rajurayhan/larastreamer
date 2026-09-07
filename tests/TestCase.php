@@ -121,6 +121,20 @@ abstract class TestCase extends BaseTestCase
         return $path;
     }
 
+    protected function writeTextFixture(string $name, string $contents): string
+    {
+        $path = $this->diskRoot.DIRECTORY_SEPARATOR.str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $name);
+        $directory = dirname($path);
+
+        if (! is_dir($directory)) {
+            mkdir($directory, 0777, true);
+        }
+
+        file_put_contents($path, $contents);
+
+        return $path;
+    }
+
     protected function responseBody(TestResponse $response): string
     {
         $base = $response->baseResponse;

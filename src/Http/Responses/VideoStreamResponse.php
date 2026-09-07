@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Raju\Streamer\Http\Responses;
 
 use Closure;
+use DateTimeImmutable;
 use Illuminate\Http\Response as LaravelResponse;
 use Raju\Streamer\Streaming\Range;
 use Raju\Streamer\Streaming\StreamOptions;
@@ -24,7 +25,9 @@ final class VideoStreamResponse
             200,
             $this->headers($mime, $options, extra: $extraHeaders),
             $options->cache === 'public',
-            $options->disposition,
+            $options->disposition === 'attachment' ? 'attachment' : null,
+            false,
+            false,
         );
 
         $response->headers->set('Accept-Ranges', 'bytes');
@@ -37,6 +40,10 @@ final class VideoStreamResponse
 
         $response->setMaxAge($options->maxAge);
 
+        foreach ($extraHeaders as $name => $value) {
+            $response->headers->set($name, $value);
+        }
+
         return $response;
     }
 
@@ -48,6 +55,30 @@ final class VideoStreamResponse
         $status = $range instanceof Range ? 206 : 200;
 
         return new LaravelResponse('', $status, $this->headers($mime, $options, $range, $size, $extraHeaders));
+    }
+
+    /**
+     * @param  array<string, string>  $extraHeaders
+     */
+    public function notModified(StreamOptions $options, array $extraHeaders = []): Response
+    {
+        $headers = [
+            'Cache-Control' => $options->cacheControl(),
+            'Accept-Ranges' => 'bytes',
+            ...$extraHeaders,
+        ];
+
+        return new LaravelResponse('', 304, $headers);
+    }
+
+    /**
+     * @param  array<string, string>  $extraHeaders
+     */
+    public function playlist(string $body, string $mime, StreamOptions $options, bool $isHead, array $extraHeaders = []): Response
+    {
+        $headers = $this->headers($mime, $options, size: strlen($body), extra: $extraHeaders);
+
+        return new LaravelResponse($isHead ? '' : $body, 200, $headers);
     }
 
     /**
@@ -95,6 +126,24 @@ final class VideoStreamResponse
             $headerName => $headerValue,
             ...$extraHeaders,
         ]));
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function validatorHeaders(?string $etag, ?int $lastModified): array
+    {
+        $headers = [];
+
+        if (is_string($etag) && $etag !== '') {
+            $headers['ETag'] = $etag;
+        }
+
+        if ($lastModified !== null) {
+            $headers['Last-Modified'] = (new DateTimeImmutable('@'.$lastModified))->format('D, d M Y H:i:s').' GMT';
+        }
+
+        return $headers;
     }
 
     /**
