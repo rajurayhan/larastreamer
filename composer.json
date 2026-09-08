@@ -1,26 +1,70 @@
 {
     "name": "rajurayhan/larastreamer",
-    "description": "A laravel package to stream video content.",
+    "description": "A lightweight, storage-agnostic video streaming engine for Laravel — HTTP Range, signed URLs, authorization, and cloud disks.",
     "type": "library",
     "license": "MIT",
+    "keywords": [
+        "laravel",
+        "video",
+        "streaming",
+        "range",
+        "s3"
+    ],
     "authors": [
         {
             "name": "Raju Rayhan",
             "email": "raju.rayhan@yandex.com"
         }
     ],
-    "minimum-stability": "dev",
+    "require": {
+        "php": "^8.3",
+        "illuminate/contracts": "^12.0 || ^13.0",
+        "illuminate/filesystem": "^12.0 || ^13.0",
+        "illuminate/http": "^12.0 || ^13.0",
+        "illuminate/routing": "^12.0 || ^13.0",
+        "illuminate/support": "^12.0 || ^13.0",
+        "illuminate/view": "^12.0 || ^13.0"
+    },
+    "require-dev": {
+        "larastan/larastan": "^3.0 || ^4.0",
+        "laravel/pint": "^1.18",
+        "orchestra/testbench": "^10.0 || ^11.0",
+        "pestphp/pest": "^3.0 || ^4.0",
+        "pestphp/pest-plugin-laravel": "^3.0 || ^4.0"
+    },
     "autoload": {
         "psr-4": {
             "Raju\\Streamer\\": "src/"
-            }
-        },
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Raju\\Streamer\\Tests\\": "tests/"
+        }
+    },
     "extra": {
         "laravel": {
             "providers": [
                 "Raju\\Streamer\\StreamServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "Streamer": "Raju\\Streamer\\Facades\\Streamer"
+            }
         }
     },
-    "require": {}
+    "scripts": {
+        "test": "pest",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "lint": "pint --test",
+        "fix": "pint"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "preferred-install": "dist"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }
