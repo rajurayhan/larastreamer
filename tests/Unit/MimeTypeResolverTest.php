@@ -27,3 +27,23 @@ it('detects mime from a local mp4 fixture', function () use ($resolver): void {
 
     expect($resolver->detectFromFile($path))->toBe('video/mp4');
 });
+
+it('normalizes hls playlist mime aliases to the canonical type', function () use ($resolver): void {
+    config(['larastreamer.hls.enabled' => true]);
+
+    expect($resolver->guess('audio/x-mpegurl', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl')
+        ->and($resolver->guess('application/x-mpegurl', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl')
+        ->and($resolver->guess('audio/mpegurl', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl')
+        ->and($resolver->guess('application/vnd.apple.mpegurl', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl')
+        ->and($resolver->guess('text/plain', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl')
+        ->and($resolver->guess('image/png', 'lesson.m3u8'))->toBe('application/vnd.apple.mpegurl');
+});
+
+it('allows common hls playlist mime aliases when hls is enabled', function () use ($resolver): void {
+    config(['larastreamer.hls.enabled' => true]);
+
+    expect($resolver->isAllowed('lesson.m3u8', 'application/vnd.apple.mpegurl'))->toBeTrue()
+        ->and($resolver->isAllowed('lesson.m3u8', 'audio/x-mpegurl'))->toBeTrue()
+        ->and($resolver->isAllowed('lesson.m3u8', 'application/x-mpegurl'))->toBeTrue()
+        ->and($resolver->isAllowed('lesson.m3u8', 'audio/mpegurl'))->toBeTrue();
+});

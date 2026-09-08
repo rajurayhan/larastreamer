@@ -46,7 +46,12 @@ final class MimeTypeResolver
      * @var array<string, list<string>>
      */
     private const HLS_MIMES = [
-        'm3u8' => ['application/vnd.apple.mpegurl', 'audio/mpegurl'],
+        'm3u8' => [
+            'application/vnd.apple.mpegurl',
+            'application/x-mpegurl',
+            'audio/mpegurl',
+            'audio/x-mpegurl',
+        ],
         'ts' => ['video/mp2t'],
         'm4s' => ['video/iso.segment'],
         'mp4' => ['video/mp4'],
@@ -79,11 +84,7 @@ final class MimeTypeResolver
         $mapped = self::EXTENSION_MAP[$extension] ?? null;
 
         if (is_string($detectedMime) && $detectedMime !== '' && ! in_array($detectedMime, self::GENERIC_MIMES, true)) {
-            if (
-                $mapped !== null
-                && in_array($extension, self::TEXTUAL_EXTENSIONS, true)
-                && (str_starts_with($detectedMime, 'text/') || str_starts_with($detectedMime, 'application/xml'))
-            ) {
+            if ($mapped !== null && $this->shouldPreferExtensionMime($extension)) {
                 return $mapped;
             }
 
@@ -146,6 +147,15 @@ final class MimeTypeResolver
         $resolved = array_values(array_map(static fn (mixed $extension): string => strtolower((string) $extension), $extensions));
 
         return array_values(array_unique([...$resolved, ...$this->extraExtensions()]));
+    }
+
+    /**
+     * Playlist and caption files are identified more reliably by extension than
+     * by finfo (macOS reports .m3u8 as audio/x-mpegurl; text/plain is also common).
+     */
+    private function shouldPreferExtensionMime(string $extension): bool
+    {
+        return in_array($extension, self::TEXTUAL_EXTENSIONS, true);
     }
 
     /**

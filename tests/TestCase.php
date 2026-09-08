@@ -57,6 +57,8 @@ abstract class TestCase extends BaseTestCase
      */
     protected function defineEnvironment($app): void
     {
+        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+
         $this->diskRoot = sys_get_temp_dir().'/larastreamer-'.spl_object_id($this);
 
         if (! is_dir($this->diskRoot)) {
