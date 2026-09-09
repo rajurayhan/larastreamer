@@ -200,7 +200,7 @@ final class DrmConfiguration
         }
 
         $scheme = strtolower($parts['scheme']);
-        $host = strtolower($parts['host']);
+        $host = trim(strtolower($parts['host']), '[]');
 
         if ($scheme !== 'https' && ($scheme !== 'http' || ! in_array($host, self::LOOPBACK_HOSTS, true))) {
             throw new DrmConfigurationException('DRM endpoint URLs require HTTPS.');

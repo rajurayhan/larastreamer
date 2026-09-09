@@ -36,6 +36,10 @@ it('allows http only for loopback development urls', function (): void {
     ]))->not->toThrow(DrmConfigurationException::class);
 
     expect(fn () => new DrmConfiguration([
+        KeySystem::ClearKey->value => 'http://[::1]/license',
+    ]))->not->toThrow(DrmConfigurationException::class);
+
+    expect(fn () => new DrmConfiguration([
         KeySystem::Widevine->value => 'http://license.example.test/widevine',
     ]))->toThrow(DrmConfigurationException::class);
 });
