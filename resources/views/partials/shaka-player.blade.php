@@ -13,8 +13,14 @@
 <script>
     (function (video, status, manifestUrl, drm) {
         var stage = 'script';
+        var failed = false;
 
         var fail = function (error) {
+            if (failed) {
+                return;
+            }
+
+            failed = true;
             var shakaCode = error && typeof error.code === 'number' ? error.code : null;
             var code = stage === 'script' ? 'shaka_load_failed' : 'drm_playback_failed';
 
@@ -41,6 +47,7 @@
             await player.attach(video);
 
             var networking = player.getNetworkingEngine();
+
             networking.registerRequestFilter(function (type, request) {
                 var requestType = shaka.net.NetworkingEngine.RequestType;
                 var headers = {};
@@ -84,7 +91,12 @@
 
             stage = 'load';
             await player.load(manifestUrl);
+            player.addEventListener('error', function (event) {
+                stage = 'runtime';
+                fail(event.detail);
+            });
             video.dispatchEvent(new CustomEvent('larastreamer:drm-ready'));
+            stage = 'runtime';
         }).catch(fail);
     })(
         document.getElementById({{ \Illuminate\Support\Js::from($videoId) }}),

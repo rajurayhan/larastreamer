@@ -24,6 +24,10 @@
             $embed['kind'] = 'hls';
         }
 
+        if ($drm instanceof \Raju\Streamer\Drm\DrmConfiguration && ! (bool) config('larastreamer.drm.enabled', true)) {
+            throw new \Raju\Streamer\Exceptions\DrmConfigurationException('DRM playback is disabled.');
+        }
+
         if ($drm instanceof \Raju\Streamer\Drm\DrmConfiguration) {
             $embed['drm'] = $drm->toArray();
         }

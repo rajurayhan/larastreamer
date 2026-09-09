@@ -148,7 +148,7 @@ The local-storage fallback uses a signed bearer ticket scoped to:
 - An expiration timestamp
 - An optional authenticated-user identifier
 
-The signature does not include the individual segment filename. This allows DASH to replace `$Number$` and `$Time$` without invalidating the ticket. Every request still performs ticket validation, path-scope validation, the existing filesystem jail, extension/MIME checks, and application authorization.
+The signature does not include the individual segment filename. This allows DASH to replace `$Number$` and `$Time$` without invalidating the ticket. The initial per-call authorization decides whether the scoped bearer capability may be issued and is not serialized into that capability. Every request still performs ticket validation, authenticated-user and path-scope validation, the existing filesystem jail, extension/MIME checks, and the application's bound authorization policy. The playback route uses Laravel's `web` middleware by default so session identity is available; applications may add `auth` when an active login must be required for each request.
 
 The ticket serializer and validator use Laravel's configured application key through an injectable signing service. Comparison is constant-time. Invalid, expired, malformed, wrong-disk, or out-of-scope tickets return 404 without revealing the accepted scope.
 

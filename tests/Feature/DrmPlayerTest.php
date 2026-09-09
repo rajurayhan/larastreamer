@@ -37,6 +37,8 @@ it('initializes pinned Shaka only for DRM playback', function (): void {
         ->toContain('com.widevine.alpha')
         ->toContain('larastreamer:drm-ready')
         ->toContain('larastreamer:drm-error')
+        ->toContain("addEventListener('error'")
+        ->toContain("stage = 'runtime'")
         ->toContain('LICENSE')
         ->not->toContain($this->diskRoot);
 });

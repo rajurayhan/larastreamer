@@ -18,6 +18,10 @@ final class DrmResolver
         ResolvedVideo $video,
         Request $request,
     ): DrmConfiguration {
+        if (! (bool) config('larastreamer.drm.enabled', true)) {
+            throw new DrmConfigurationException('DRM playback is disabled.');
+        }
+
         $kind = StreamKind::fromPath($video->path);
 
         if (! in_array($kind, [StreamKind::Hls, StreamKind::Dash], true)) {
@@ -38,11 +42,8 @@ final class DrmResolver
             ));
         } catch (DrmConfigurationException $exception) {
             throw $exception;
-        } catch (Throwable $exception) {
-            throw new DrmConfigurationException(
-                'Unable to build DRM playback configuration.',
-                previous: $exception,
-            );
+        } catch (Throwable) {
+            throw new DrmConfigurationException('Unable to build DRM playback configuration.');
         }
     }
 }

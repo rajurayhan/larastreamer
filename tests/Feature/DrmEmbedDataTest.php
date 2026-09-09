@@ -87,11 +87,13 @@ it('wraps provider failures without exposing their message', function (): void {
         }
     };
 
-    expect(fn () => Streamer::disk('videos')->file('movie.mpd')->drm($provider)->embedData())
-        ->toThrow(
-            DrmConfigurationException::class,
-            'Unable to build DRM playback configuration.',
-        );
+    try {
+        Streamer::disk('videos')->file('movie.mpd')->drm($provider)->embedData();
+        $this->fail('Expected DRM configuration to fail.');
+    } catch (DrmConfigurationException $exception) {
+        expect($exception->getMessage())->toBe('Unable to build DRM playback configuration.')
+            ->and($exception->getPrevious())->toBeNull();
+    }
 });
 
 it('rejects DRM configuration on a progressive file', function (): void {
@@ -116,4 +118,16 @@ it('does not add a drm key to ordinary embed data', function (): void {
     $data = Streamer::disk('videos')->file('movie.mpd')->embedData();
 
     expect($data)->not->toHaveKey('drm');
+});
+
+it('honors the DRM feature switch', function (): void {
+    config(['larastreamer.drm.enabled' => false]);
+
+    $configuration = new DrmConfiguration(
+        [KeySystem::Widevine->value => 'https://license.example.test/widevine'],
+        manifestUrl: 'https://media.example.test/movie/manifest.mpd',
+    );
+
+    expect(fn () => Streamer::disk('videos')->file('movie.mpd')->drm($configuration)->embedData())
+        ->toThrow(DrmConfigurationException::class, 'DRM playback is disabled.');
 });

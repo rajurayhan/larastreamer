@@ -15,8 +15,10 @@ Route::get($prefix, StreamController::class)
     ->name($name);
 
 $playbackName = config('larastreamer.drm.playback_route_name', 'larastreamer.playback');
-$playbackMiddleware = config('larastreamer.drm.playback_middleware', []);
+$playbackMiddleware = config('larastreamer.drm.playback_middleware', ['web']);
 
-Route::get($prefix.'/playback', PlaybackController::class)
-    ->middleware(is_array($playbackMiddleware) ? $playbackMiddleware : [])
-    ->name(is_string($playbackName) ? $playbackName : 'larastreamer.playback');
+if ((bool) config('larastreamer.drm.enabled', true)) {
+    Route::get($prefix.'/playback', PlaybackController::class)
+        ->middleware(is_array($playbackMiddleware) ? $playbackMiddleware : ['web'])
+        ->name(is_string($playbackName) ? $playbackName : 'larastreamer.playback');
+}

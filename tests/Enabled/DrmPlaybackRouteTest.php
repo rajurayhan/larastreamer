@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Illuminate\Auth\GenericUser;
+use Illuminate\Support\Facades\Route;
 use Raju\Streamer\Drm\DrmConfiguration;
 use Raju\Streamer\Drm\KeySystem;
 use Raju\Streamer\Drm\PlaybackTicketManager;
@@ -16,10 +18,10 @@ it('serves a named-disk manifest and segment with one scoped ticket', function (
     ]);
 
     $this->writeTextFixture('movie/manifest.mpd', <<<'MPD'
-<?xml version="1.0"?><MPD><SegmentTemplate media="chunk-$Number$.m4s" initialization="init.m4s"/></MPD>
+<?xml version="1.0"?><MPD><BaseURL>segments/</BaseURL><SegmentTemplate media='chunk-$Number$.m4s' initialization='init.m4s'/></MPD>
 MPD);
-    $this->writeFixture('movie/init.m4s', 256);
-    $this->writeFixture('movie/chunk-1.m4s', 256);
+    $this->writeFixture('movie/segments/init.m4s', 256);
+    $this->writeFixture('movie/segments/chunk-1.m4s', 256);
 
     $configuration = new DrmConfiguration([
         KeySystem::ClearKey->value => 'http://localhost/license',
@@ -38,6 +40,43 @@ MPD);
     preg_match('/initialization="([^"]+)"/', $body, $matches);
     $initializationUrl = html_entity_decode($matches[1] ?? '', ENT_QUOTES | ENT_XML1);
     $this->get($initializationUrl)->assertOk();
+});
+
+it('preserves authenticated user binding on the default playback route', function (): void {
+    config([
+        'larastreamer.dash.enabled' => true,
+        'larastreamer.storage.path' => '',
+    ]);
+    $this->actingAs(new GenericUser(['id' => 42]));
+    $this->writeTextFixture('member/manifest.mpd', '<?xml version="1.0"?><MPD></MPD>');
+
+    $route = Route::getRoutes()->getByName('larastreamer.playback');
+    expect($route?->gatherMiddleware())->toContain('web');
+
+    $token = app(PlaybackTicketManager::class)->issue(
+        'videos',
+        'member/manifest.mpd',
+        now()->addMinutes(5),
+        42,
+    );
+    $url = route('larastreamer.playback', [
+        'file' => 'member/manifest.mpd',
+        'ticket' => $token,
+    ]);
+
+    $this->get($url)->assertOk();
+});
+
+it('rejects expired and tampered playback tickets at the route', function (): void {
+    $manager = app(PlaybackTicketManager::class);
+    $expired = $manager->issue('videos', 'movie/manifest.mpd', now()->subSecond(), null);
+
+    foreach ([$expired, $expired.'x'] as $ticket) {
+        $this->get(route('larastreamer.playback', [
+            'file' => 'movie/manifest.mpd',
+            'ticket' => $ticket,
+        ]))->assertNotFound();
+    }
 });
 
 it('rejects an out-of-scope file using a valid playback ticket', function (): void {

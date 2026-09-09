@@ -500,7 +500,7 @@ You can implement `Raju\Streamer\Contracts\DrmProvider` when license URLs or sho
 
 All DRM endpoint URLs require HTTPS, except loopback HTTP URLs for local development. The default player engine is the pinned `https://cdn.jsdelivr.net/npm/shaka-player@5.2.9/dist/shaka-player.compiled.js` build; set `drm.shaka_src` to a self-hosted copy if required. Shaka is loaded only when DRM data is attached, so ordinary progressive and HLS playback remains unchanged.
 
-For production, prefer encrypted assets in a private S3-compatible origin behind a CDN and provide `manifestUrl`. The CDN then serves manifest and segment bytes without placing PHP in the hot path. If an encrypted manifest is on a local disk and has no override, Larastreamer creates an encrypted, expiring bearer ticket scoped to that disk and asset directory. The playback route applies the ticket scope, current user identity, filesystem jail, MIME checks, and application authorization to every request.
+For production, prefer encrypted assets in a private S3-compatible origin behind a CDN and provide `manifestUrl`. The CDN then serves manifest and segment bytes without placing PHP in the hot path. If an encrypted manifest is on a local disk and has no override, Larastreamer creates an encrypted, expiring bearer ticket scoped to that disk, asset directory, and current user. The initial `authorize()` callback decides whether that capability may be issued; callbacks are not serialized or replayed on later browser requests. Every playback request still validates the ticket and user identity, applies the filesystem jail and MIME checks, and runs the application's bound `Authorization` implementation. The default `web` middleware hydrates Laravel's session; add `auth` to `drm.playback_middleware` if the viewer must remain logged in throughout playback.
 
 The player emits safe lifecycle events without URLs, headers, license payloads, or provider error messages:
 
@@ -692,9 +692,10 @@ See `config/larastreamer.php` after publishing.
 | `hls.rewrite` / `dash.rewrite` | `true` | Rewrite relative URIs |
 | `hls.player` | `native` | `native` or `hlsjs` |
 | `hls.hlsjs_src` | jsDelivr HLS.js | CDN string only |
+| `drm.enabled` | `true` | Enable DRM configuration and the local playback route |
 | `drm.shaka_src` | pinned Shaka Player 5.2.9 | May be replaced with a self-hosted build |
 | `drm.playback_route_name` | `larastreamer.playback` | Local encrypted asset route name |
-| `drm.playback_middleware` | `[]` | Additional middleware for local DRM asset requests |
+| `drm.playback_middleware` | `['web']` | Middleware for local DRM asset requests; add `auth` when required |
 | `captions.enabled` | `true` | Allow `.vtt` / `.srt` |
 | `offload.enabled` | `false` | Local sendfile / accel |
 
