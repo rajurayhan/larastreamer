@@ -63,8 +63,11 @@ final class VideoStreamer implements Streamer
         return (new PendingStream($this))->file($path);
     }
 
-    public function signedUrl(string $path, DateTimeInterface|int|null $expires = null): string
-    {
+    public function signedUrl(
+        string $path,
+        DateTimeInterface|int|null $expires = null,
+        ?string $disk = null,
+    ): string {
         if (! $this->signedUrlsEnabled()) {
             throw new StreamException('Signed stream URLs are disabled.');
         }
@@ -75,10 +78,16 @@ final class VideoStreamer implements Streamer
             throw new StreamException('Signed stream routes are disabled.');
         }
 
+        $parameters = ['file' => $path];
+
+        if (is_string($disk) && $disk !== '') {
+            $parameters['disk'] = $disk;
+        }
+
         return $this->urls->temporarySignedRoute(
             $name,
             $this->expiration($expires),
-            ['file' => $path],
+            $parameters,
         );
     }
 
@@ -103,7 +112,7 @@ final class VideoStreamer implements Streamer
         return $this->deliver($pending, attachment: true);
     }
 
-    public function redirect(PendingStream $pending, ?DateTimeInterface $expires = null): Response
+    public function redirect(PendingStream $pending, DateTimeInterface|int|null $expires = null): Response
     {
         try {
             $video = $this->prepare($pending);
@@ -120,7 +129,7 @@ final class VideoStreamer implements Streamer
         }
     }
 
-    public function temporaryUrl(PendingStream $pending, ?DateTimeInterface $expires = null): string
+    public function temporaryUrl(PendingStream $pending, DateTimeInterface|int|null $expires = null): string
     {
         $video = $this->prepare($pending);
 
@@ -152,7 +161,7 @@ final class VideoStreamer implements Streamer
     /**
      * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
      */
-    public function embedData(PendingStream $pending, ?DateTimeInterface $expires = null): array
+    public function embedData(PendingStream $pending, DateTimeInterface|int|null $expires = null): array
     {
         $video = $this->prepare($pending);
         $expiration = $this->expiration($expires);
@@ -284,7 +293,7 @@ final class VideoStreamer implements Streamer
     private function segmentUrl(ResolvedVideo $playlist, string $path): string
     {
         if ($playlist->isLocal) {
-            return $this->signedUrl($path);
+            return $this->signedUrl($path, disk: $playlist->disk);
         }
 
         return $this->storage->temporaryUrl($playlist->disk, $path, $this->expiration(null));
@@ -365,7 +374,7 @@ final class VideoStreamer implements Streamer
         }
 
         try {
-            return $this->signedUrl($this->embedPath($pending), $expiration);
+            return $this->signedUrl($this->embedPath($pending), $expiration, $pending->diskName());
         } catch (StreamException $exception) {
             throw new StreamException('Unable to build an embed URL. Enable signed stream routes or pass a public url.', previous: $exception);
         }

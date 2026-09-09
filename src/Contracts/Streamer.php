@@ -13,7 +13,11 @@ interface Streamer
 
     public function file(string $path): PendingStream;
 
-    public function signedUrl(string $path, DateTimeInterface|int|null $expires = null): string;
+    public function signedUrl(
+        string $path,
+        DateTimeInterface|int|null $expires = null,
+        ?string $disk = null,
+    ): string;
 
     public function authorize(callable|Authorization $callback): static;
 }

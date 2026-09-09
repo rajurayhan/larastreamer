@@ -71,12 +71,12 @@ final class PendingStream
         return $this->streamer->download($this);
     }
 
-    public function redirect(?DateTimeInterface $expires = null): Response
+    public function redirect(DateTimeInterface|int|null $expires = null): Response
     {
         return $this->streamer->redirect($this, $expires);
     }
 
-    public function temporaryUrl(?DateTimeInterface $expires = null): string
+    public function temporaryUrl(DateTimeInterface|int|null $expires = null): string
     {
         return $this->streamer->temporaryUrl($this, $expires);
     }
@@ -89,7 +89,7 @@ final class PendingStream
     /**
      * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
      */
-    public function embedData(?DateTimeInterface $expires = null): array
+    public function embedData(DateTimeInterface|int|null $expires = null): array
     {
         return $this->streamer->embedData($this, $expires);
     }
