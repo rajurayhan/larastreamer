@@ -17,6 +17,8 @@ use Raju\Streamer\Contracts\Authorization;
 use Raju\Streamer\Contracts\Probe;
 use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
+use Raju\Streamer\Drm\DrmConfiguration;
+use Raju\Streamer\Drm\DrmResolver;
 use Raju\Streamer\Events\VideoStreamCompleted;
 use Raju\Streamer\Events\VideoStreamFailed;
 use Raju\Streamer\Events\VideoStreamStarted;
@@ -45,6 +47,7 @@ final class VideoStreamer implements Streamer
         private readonly Application $app,
         private readonly HlsPlaylistRewriter $hlsRewriter,
         private readonly DashManifestRewriter $dashRewriter,
+        private readonly DrmResolver $drmResolver,
     ) {}
 
     public function disk(?string $disk = null): PendingStream
@@ -159,21 +162,30 @@ final class VideoStreamer implements Streamer
     }
 
     /**
-     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
+     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>, drm?: array<string, mixed>}
      */
     public function embedData(PendingStream $pending, DateTimeInterface|int|null $expires = null): array
     {
         $video = $this->prepare($pending);
         $expiration = $this->expiration($expires);
+        $drm = $pending->drmSource() !== null
+            ? $this->drmResolver->resolve($pending->drmSource(), $video, $this->request())
+            : null;
 
-        return [
-            'url' => $this->publicUrl($video, $pending, $expiration),
+        $data = [
+            'url' => $drm?->manifestUrl() ?? $this->publicUrl($video, $pending, $expiration),
             'type' => 'video',
             'mime' => $video->mime,
             'expires_at' => $expiration->format(DATE_ATOM),
             'kind' => StreamKind::fromPath($video->path)->value,
             'captions' => $this->embedCaptions($pending, $expiration),
         ];
+
+        if ($drm instanceof DrmConfiguration) {
+            $data['drm'] = $drm->toArray();
+        }
+
+        return $data;
     }
 
     private function deliver(PendingStream $pending, bool $attachment): Response

@@ -8,6 +8,7 @@ use Illuminate\Support\ServiceProvider;
 use Raju\Streamer\Contracts\Authorization;
 use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
+use Raju\Streamer\Drm\DrmResolver;
 use Raju\Streamer\Http\Responses\VideoStreamResponse;
 use Raju\Streamer\Playlist\DashManifestRewriter;
 use Raju\Streamer\Playlist\HlsPlaylistRewriter;
@@ -29,6 +30,7 @@ final class StreamServiceProvider extends ServiceProvider
         $this->app->singleton(VideoStreamResponse::class);
         $this->app->singleton(HlsPlaylistRewriter::class);
         $this->app->singleton(DashManifestRewriter::class);
+        $this->app->singleton(DrmResolver::class);
         $this->app->singleton(StorageResolver::class, LaravelFilesystem::class);
         $this->app->singleton(Authorization::class, AllowAllAuthorization::class);
         $this->app->scoped(StreamContext::class);
