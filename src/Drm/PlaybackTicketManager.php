@@ -119,7 +119,8 @@ final readonly class PlaybackTicketManager
 
         $normalized = str_replace('\\', '/', $decoded);
 
-        if (str_starts_with($normalized, '/')
+        if (str_contains($normalized, "\0")
+            || str_starts_with($normalized, '/')
             || str_ends_with($normalized, '/')
             || preg_match('/^[A-Za-z]:\//', $normalized) === 1
             || preg_match('/(^|\/)\.\.(\/|$)/', $normalized) === 1) {
