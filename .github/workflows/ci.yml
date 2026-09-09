@@ -39,6 +39,13 @@ jobs:
       - name: Tests
         run: vendor/bin/pest
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Shaka player tests
+        run: node --test tests/JavaScript/*.test.mjs
+
       - name: Pint
         run: vendor/bin/pint --test
 

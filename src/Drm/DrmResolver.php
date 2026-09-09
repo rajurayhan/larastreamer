@@ -40,8 +40,6 @@ final class DrmResolver
                 user: $request->user(),
                 request: $request,
             ));
-        } catch (DrmConfigurationException $exception) {
-            throw $exception;
         } catch (Throwable) {
             throw new DrmConfigurationException('Unable to build DRM playback configuration.');
         }

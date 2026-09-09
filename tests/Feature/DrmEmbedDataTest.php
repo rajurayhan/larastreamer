@@ -96,6 +96,24 @@ it('wraps provider failures without exposing their message', function (): void {
     }
 });
 
+it('sanitizes configuration exceptions thrown by a provider', function (): void {
+    $provider = new class implements DrmProvider
+    {
+        public function configuration(DrmContext $context): DrmConfiguration
+        {
+            throw new DrmConfigurationException('vendor token: super-secret');
+        }
+    };
+
+    try {
+        Streamer::disk('videos')->file('movie.mpd')->drm($provider)->embedData();
+        $this->fail('Expected DRM configuration to fail.');
+    } catch (DrmConfigurationException $exception) {
+        expect($exception->getMessage())->toBe('Unable to build DRM playback configuration.')
+            ->and($exception->getPrevious())->toBeNull();
+    }
+});
+
 it('rejects DRM configuration on a progressive file', function (): void {
     $configuration = new DrmConfiguration(
         [KeySystem::Widevine->value => 'https://license.example.test/widevine'],

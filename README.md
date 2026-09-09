@@ -727,6 +727,7 @@ See `config/larastreamer.php` after publishing.
 
 ```bash
 composer test
+node --test tests/JavaScript/*.test.mjs
 vendor/bin/pint --test
 vendor/bin/phpstan analyse --memory-limit=1G
 ```
