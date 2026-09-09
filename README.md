@@ -27,6 +27,7 @@ See [`docs/v3.md`](docs/v3.md) for the 3.0 design notes.
   - [Metadata](#metadata)
   - [Captions](#captions)
   - [HLS and DASH serving](#hls-and-dash-serving)
+  - [DRM playback](#drm-playback)
   - [Downloads](#downloads)
   - [Player](#player)
   - [Events](#events)
@@ -119,6 +120,7 @@ Every delivery call starts from the `Streamer` facade and a `PendingStream` buil
 | `->file($path)` | `PendingStream` | Relative disk path, or an absolute local file that exists |
 | `->captions($tracks)` | `PendingStream` | VTT/SRT tracks for `stream()` / `embedData()` / the player |
 | `->authorize($cb)` | `PendingStream` | Per-call authorization (this request only) |
+| `->drm($configuration)` | `PendingStream` | Attach a `DrmConfiguration` or application `DrmProvider` |
 | `->stream()` | `Response` | Stream, redirect, offload, or rewrite a playlist |
 | `->download()` | `Response` | Attachment disposition (remote disks 302) |
 | `->redirect($expires)` | `Response` | 302 to a disk `temporaryUrl()` |
@@ -460,6 +462,60 @@ return Streamer::disk('videos')->file('courses/lesson-01.m3u8')->stream();
 
 Safari can play HLS natively. For Chrome/Firefox set `hls.player` to `hlsjs` and use the Blade player — HLS.js is loaded from `hls.hlsjs_src`, not vendored in Composer.
 
+### DRM playback
+
+Larastreamer can play externally packaged encrypted HLS or DASH through the existing Blade component. It does not encrypt media, store content keys, issue licenses, or proxy license challenges. Widevine, PlayReady, and FairPlay therefore require a compatible external packager and licensed DRM service. `ClearKey` is suitable only for development.
+
+```php
+use Raju\Streamer\Drm\DrmConfiguration;
+use Raju\Streamer\Drm\KeySystem;
+use Raju\Streamer\Facades\Streamer;
+
+$drm = new DrmConfiguration(
+    licenseServers: [
+        KeySystem::Widevine->value => route('licenses.widevine', $movie),
+        KeySystem::PlayReady->value => route('licenses.playready', $movie),
+    ],
+    licenseHeaders: ['Authorization' => 'Bearer '.$shortLivedPlaybackToken],
+    manifestUrl: $cdn->signedManifestUrl($movie),
+);
+
+return Streamer::disk($movie->disk)
+    ->file($movie->manifest_path)
+    ->drm($drm)
+    ->embedData();
+```
+
+The Blade component accepts the same configuration and keeps its existing public API:
+
+```blade
+<x-larastreamer::player
+    disk="videos"
+    src="protected/movie.mpd"
+    :drm="$drm"
+/>
+```
+
+You can implement `Raju\Streamer\Contracts\DrmProvider` when license URLs or short-lived headers depend on the viewer or asset. Its `configuration(DrmContext $context)` method runs only after Larastreamer authorizes and resolves the requested manifest. The browser receives only the allowlisted license/content/certificate headers and Shaka robustness settings in `DrmConfiguration`; never pass raw content keys, private keys, vendor server credentials, or long-lived client secrets.
+
+All DRM endpoint URLs require HTTPS, except loopback HTTP URLs for local development. The default player engine is the pinned `https://cdn.jsdelivr.net/npm/shaka-player@5.2.9/dist/shaka-player.compiled.js` build; set `drm.shaka_src` to a self-hosted copy if required. Shaka is loaded only when DRM data is attached, so ordinary progressive and HLS playback remains unchanged.
+
+For production, prefer encrypted assets in a private S3-compatible origin behind a CDN and provide `manifestUrl`. The CDN then serves manifest and segment bytes without placing PHP in the hot path. If an encrypted manifest is on a local disk and has no override, Larastreamer creates an encrypted, expiring bearer ticket scoped to that disk, asset directory, and current user. The initial `authorize()` callback decides whether that capability may be issued; callbacks are not serialized or replayed on later browser requests. Every playback request still validates the ticket and user identity, applies the filesystem jail and MIME checks, and runs the application's bound `Authorization` implementation. The default `web` middleware hydrates Laravel's session; add `auth` to `drm.playback_middleware` if the viewer must remain logged in throughout playback.
+
+The player emits safe lifecycle events without URLs, headers, license payloads, or provider error messages:
+
+```javascript
+video.addEventListener('larastreamer:drm-ready', function () {
+    console.log('Protected playback is ready');
+});
+
+video.addEventListener('larastreamer:drm-error', function (event) {
+    console.error(event.detail.code, event.detail.stage, event.detail.shakaCode);
+});
+```
+
+DRM protects decryption keys and raises the cost of copying media; it cannot prevent screen capture.
+
 ### Downloads
 
 ```php
@@ -495,6 +551,8 @@ Local files send `Content-Disposition: attachment`. Remote disks 302 to a tempor
 | `autoplay` | `bool` | Default `false` |
 | `controls` | `bool` | Default `true` |
 | `captions` | `array` | Override tracks; otherwise uses `embedData()['captions']` |
+| `disk` | `string` | Named disk used when resolving `src` |
+| `drm` | `DrmConfiguration\|DrmProvider` | Enables conditional protected playback through Shaka |
 
 Extra HTML attributes pass through to `<video>`.
 
@@ -634,6 +692,10 @@ See `config/larastreamer.php` after publishing.
 | `hls.rewrite` / `dash.rewrite` | `true` | Rewrite relative URIs |
 | `hls.player` | `native` | `native` or `hlsjs` |
 | `hls.hlsjs_src` | jsDelivr HLS.js | CDN string only |
+| `drm.enabled` | `true` | Enable DRM configuration and the local playback route |
+| `drm.shaka_src` | pinned Shaka Player 5.2.9 | May be replaced with a self-hosted build |
+| `drm.playback_route_name` | `larastreamer.playback` | Local encrypted asset route name |
+| `drm.playback_middleware` | `['web']` | Middleware for local DRM asset requests; add `auth` when required |
 | `captions.enabled` | `true` | Allow `.vtt` / `.srt` |
 | `offload.enabled` | `false` | Local sendfile / accel |
 
@@ -665,6 +727,7 @@ See `config/larastreamer.php` after publishing.
 
 ```bash
 composer test
+node --test tests/JavaScript/*.test.mjs
 vendor/bin/pint --test
 vendor/bin/phpstan analyse --memory-limit=1G
 ```

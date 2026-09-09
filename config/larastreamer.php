@@ -52,6 +52,14 @@ return [
         'rewrite' => true,
     ],
 
+    'drm' => [
+        'enabled' => true,
+        'shaka_src' => 'https://cdn.jsdelivr.net/npm/shaka-player@5.2.9/dist/shaka-player.compiled.js',
+        'fallback_message' => 'Protected playback is not supported on this device.',
+        'playback_route_name' => 'larastreamer.playback',
+        'playback_middleware' => ['web'],
+    ],
+
     'captions' => [
         'enabled' => true,
         'allowed_extensions' => ['vtt', 'srt'],

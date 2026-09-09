@@ -17,6 +17,10 @@ use Raju\Streamer\Contracts\Authorization;
 use Raju\Streamer\Contracts\Probe;
 use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
+use Raju\Streamer\Drm\DrmConfiguration;
+use Raju\Streamer\Drm\DrmResolver;
+use Raju\Streamer\Drm\PlaybackTicketManager;
+use Raju\Streamer\Drm\PlaybackUrlGenerator;
 use Raju\Streamer\Events\VideoStreamCompleted;
 use Raju\Streamer\Events\VideoStreamFailed;
 use Raju\Streamer\Events\VideoStreamStarted;
@@ -45,6 +49,9 @@ final class VideoStreamer implements Streamer
         private readonly Application $app,
         private readonly HlsPlaylistRewriter $hlsRewriter,
         private readonly DashManifestRewriter $dashRewriter,
+        private readonly DrmResolver $drmResolver,
+        private readonly PlaybackTicketManager $playbackTickets,
+        private readonly PlaybackUrlGenerator $playbackUrls,
     ) {}
 
     public function disk(?string $disk = null): PendingStream
@@ -63,8 +70,11 @@ final class VideoStreamer implements Streamer
         return (new PendingStream($this))->file($path);
     }
 
-    public function signedUrl(string $path, DateTimeInterface|int|null $expires = null): string
-    {
+    public function signedUrl(
+        string $path,
+        DateTimeInterface|int|null $expires = null,
+        ?string $disk = null,
+    ): string {
         if (! $this->signedUrlsEnabled()) {
             throw new StreamException('Signed stream URLs are disabled.');
         }
@@ -75,10 +85,16 @@ final class VideoStreamer implements Streamer
             throw new StreamException('Signed stream routes are disabled.');
         }
 
+        $parameters = ['file' => $path];
+
+        if (is_string($disk) && $disk !== '') {
+            $parameters['disk'] = $disk;
+        }
+
         return $this->urls->temporarySignedRoute(
             $name,
             $this->expiration($expires),
-            ['file' => $path],
+            $parameters,
         );
     }
 
@@ -103,7 +119,7 @@ final class VideoStreamer implements Streamer
         return $this->deliver($pending, attachment: true);
     }
 
-    public function redirect(PendingStream $pending, ?DateTimeInterface $expires = null): Response
+    public function redirect(PendingStream $pending, DateTimeInterface|int|null $expires = null): Response
     {
         try {
             $video = $this->prepare($pending);
@@ -120,7 +136,7 @@ final class VideoStreamer implements Streamer
         }
     }
 
-    public function temporaryUrl(PendingStream $pending, ?DateTimeInterface $expires = null): string
+    public function temporaryUrl(PendingStream $pending, DateTimeInterface|int|null $expires = null): string
     {
         $video = $this->prepare($pending);
 
@@ -150,21 +166,43 @@ final class VideoStreamer implements Streamer
     }
 
     /**
-     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
+     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>, drm?: array<string, mixed>}
      */
-    public function embedData(PendingStream $pending, ?DateTimeInterface $expires = null): array
+    public function embedData(PendingStream $pending, DateTimeInterface|int|null $expires = null): array
     {
         $video = $this->prepare($pending);
         $expiration = $this->expiration($expires);
+        $drm = $pending->drmSource() !== null
+            ? $this->drmResolver->resolve($pending->drmSource(), $video, $this->request())
+            : null;
 
-        return [
-            'url' => $this->publicUrl($video, $pending, $expiration),
+        $url = $drm?->manifestUrl();
+
+        if ($drm instanceof DrmConfiguration && $url === null && $video->isLocal) {
+            $ticket = $this->playbackTickets->issue(
+                $video->disk,
+                $video->path,
+                $expiration,
+                $this->userId(),
+            );
+            $pending->playbackTicket($ticket);
+            $url = $this->playbackUrls->url($video->path, $ticket);
+        }
+
+        $data = [
+            'url' => $url ?? $this->publicUrl($video, $pending, $expiration),
             'type' => 'video',
             'mime' => $video->mime,
             'expires_at' => $expiration->format(DATE_ATOM),
             'kind' => StreamKind::fromPath($video->path)->value,
             'captions' => $this->embedCaptions($pending, $expiration),
         ];
+
+        if ($drm instanceof DrmConfiguration) {
+            $data['drm'] = $drm->toArray();
+        }
+
+        return $data;
     }
 
     private function deliver(PendingStream $pending, bool $attachment): Response
@@ -260,12 +298,12 @@ final class VideoStreamer implements Streamer
             StreamKind::Dash => $this->dashRewriter->rewrite(
                 $contents,
                 $video->path,
-                fn (string $path): string => $this->segmentUrl($video, $path),
+                fn (string $path): string => $this->segmentUrl($pending, $video, $path),
             ),
             default => $this->hlsRewriter->rewrite(
                 $contents,
                 $video->path,
-                fn (string $path): string => $this->segmentUrl($video, $path),
+                fn (string $path): string => $this->segmentUrl($pending, $video, $path),
             ),
         };
 
@@ -281,10 +319,14 @@ final class VideoStreamer implements Streamer
         );
     }
 
-    private function segmentUrl(ResolvedVideo $playlist, string $path): string
+    private function segmentUrl(PendingStream $pending, ResolvedVideo $playlist, string $path): string
     {
+        if ($pending->playbackTicketValue() !== null) {
+            return $this->playbackUrls->url($path, $pending->playbackTicketValue());
+        }
+
         if ($playlist->isLocal) {
-            return $this->signedUrl($path);
+            return $this->signedUrl($path, disk: $playlist->disk);
         }
 
         return $this->storage->temporaryUrl($playlist->disk, $path, $this->expiration(null));
@@ -365,7 +407,7 @@ final class VideoStreamer implements Streamer
         }
 
         try {
-            return $this->signedUrl($this->embedPath($pending), $expiration);
+            return $this->signedUrl($this->embedPath($pending), $expiration, $pending->diskName());
         } catch (StreamException $exception) {
             throw new StreamException('Unable to build an embed URL. Enable signed stream routes or pass a public url.', previous: $exception);
         }

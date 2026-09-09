@@ -24,6 +24,28 @@ MPD;
         ->toContain('https://cdn.example.test/keep.m4s');
 });
 
+it('resolves nested base urls and namespaced single-quoted hrefs', function () use ($rewriter): void {
+    $mpd = <<<'MPD'
+<?xml version="1.0"?>
+<MPD xmlns:xlink="http://www.w3.org/1999/xlink">
+  <BaseURL>video/</BaseURL>
+  <Period>
+    <BaseURL>720p/</BaseURL>
+    <SegmentTemplate media='chunk-$Number$.m4s' initialization='init.m4s'/>
+    <Representation xlink:href='subtitles.m4s'/>
+  </Period>
+</MPD>
+MPD;
+
+    $rewritten = $rewriter->rewrite($mpd, 'courses/manifest.mpd', fn (string $path): string => 'signed:'.$path.'?a=1&b=2');
+
+    expect($rewritten)
+        ->toContain('signed:courses/video/720p/chunk-$Number$.m4s?a=1&amp;b=2')
+        ->toContain('signed:courses/video/720p/init.m4s?a=1&amp;b=2')
+        ->toContain('xlink:href="signed:courses/video/720p/subtitles.m4s?a=1&amp;b=2"')
+        ->not->toContain('<BaseURL>');
+});
+
 it('rejects traversal in a dash href', function () use ($rewriter): void {
     $rewriter->rewrite(
         '<?xml version="1.0"?><MPD href="../secret.m4s"></MPD>',

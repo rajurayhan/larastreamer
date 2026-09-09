@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Provider-neutral DRM playback configuration for Widevine, PlayReady, FairPlay, and development-only ClearKey
+- Conditional Shaka Player 5.2.9 integration in the existing Blade player
+- Directory-scoped playback tickets for local encrypted HLS/DASH assets
+- CDN manifest overrides and separated license/content/certificate request headers
+
+### Fixed
+
+- Preserve named disks in signed local stream URLs
+- Accept documented integer expiration values across pending stream URL methods
+- Preserve dynamic DASH template identifiers in local playback URLs
+
 ## [3.0.0] - 2026-09-07
 
 Delivery-only breaking release. It is **not** a transcoding platform.

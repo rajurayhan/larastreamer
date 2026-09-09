@@ -13,7 +13,7 @@ use Raju\Streamer\Streaming\PendingStream;
 /**
  * @method static PendingStream disk(?string $disk = null)
  * @method static PendingStream file(string $path)
- * @method static string signedUrl(string $path, DateTimeInterface|int|null $expires = null)
+ * @method static string signedUrl(string $path, DateTimeInterface|int|null $expires = null, ?string $disk = null)
  * @method static StreamerContract authorize(callable|Authorization $callback)
  */
 final class Streamer extends Facade
