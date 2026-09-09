@@ -19,6 +19,8 @@ use Raju\Streamer\Contracts\StorageResolver;
 use Raju\Streamer\Contracts\Streamer;
 use Raju\Streamer\Drm\DrmConfiguration;
 use Raju\Streamer\Drm\DrmResolver;
+use Raju\Streamer\Drm\PlaybackTicketManager;
+use Raju\Streamer\Drm\PlaybackUrlGenerator;
 use Raju\Streamer\Events\VideoStreamCompleted;
 use Raju\Streamer\Events\VideoStreamFailed;
 use Raju\Streamer\Events\VideoStreamStarted;
@@ -48,6 +50,8 @@ final class VideoStreamer implements Streamer
         private readonly HlsPlaylistRewriter $hlsRewriter,
         private readonly DashManifestRewriter $dashRewriter,
         private readonly DrmResolver $drmResolver,
+        private readonly PlaybackTicketManager $playbackTickets,
+        private readonly PlaybackUrlGenerator $playbackUrls,
     ) {}
 
     public function disk(?string $disk = null): PendingStream
@@ -172,8 +176,21 @@ final class VideoStreamer implements Streamer
             ? $this->drmResolver->resolve($pending->drmSource(), $video, $this->request())
             : null;
 
+        $url = $drm?->manifestUrl();
+
+        if ($drm instanceof DrmConfiguration && $url === null && $video->isLocal) {
+            $ticket = $this->playbackTickets->issue(
+                $video->disk,
+                $video->path,
+                $expiration,
+                $this->userId(),
+            );
+            $pending->playbackTicket($ticket);
+            $url = $this->playbackUrls->url($video->path, $ticket);
+        }
+
         $data = [
-            'url' => $drm?->manifestUrl() ?? $this->publicUrl($video, $pending, $expiration),
+            'url' => $url ?? $this->publicUrl($video, $pending, $expiration),
             'type' => 'video',
             'mime' => $video->mime,
             'expires_at' => $expiration->format(DATE_ATOM),
@@ -281,12 +298,12 @@ final class VideoStreamer implements Streamer
             StreamKind::Dash => $this->dashRewriter->rewrite(
                 $contents,
                 $video->path,
-                fn (string $path): string => $this->segmentUrl($video, $path),
+                fn (string $path): string => $this->segmentUrl($pending, $video, $path),
             ),
             default => $this->hlsRewriter->rewrite(
                 $contents,
                 $video->path,
-                fn (string $path): string => $this->segmentUrl($video, $path),
+                fn (string $path): string => $this->segmentUrl($pending, $video, $path),
             ),
         };
 
@@ -302,8 +319,12 @@ final class VideoStreamer implements Streamer
         );
     }
 
-    private function segmentUrl(ResolvedVideo $playlist, string $path): string
+    private function segmentUrl(PendingStream $pending, ResolvedVideo $playlist, string $path): string
     {
+        if ($pending->playbackTicketValue() !== null) {
+            return $this->playbackUrls->url($path, $pending->playbackTicketValue());
+        }
+
         if ($playlist->isLocal) {
             return $this->signedUrl($path, disk: $playlist->disk);
         }

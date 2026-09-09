@@ -24,6 +24,8 @@ final class PendingStream
 
     private DrmConfiguration|DrmProvider|null $drm = null;
 
+    private ?string $playbackTicket = null;
+
     /**
      * @var list<array{src: string, srclang?: string, label?: string, default?: bool}>
      */
@@ -68,6 +70,13 @@ final class PendingStream
     public function drm(DrmConfiguration|DrmProvider $drm): self
     {
         $this->drm = $drm;
+
+        return $this;
+    }
+
+    public function playbackTicket(string $ticket): self
+    {
+        $this->playbackTicket = $ticket;
 
         return $this;
     }
@@ -136,5 +145,10 @@ final class PendingStream
     public function drmSource(): DrmConfiguration|DrmProvider|null
     {
         return $this->drm;
+    }
+
+    public function playbackTicketValue(): ?string
+    {
+        return $this->playbackTicket;
     }
 }
