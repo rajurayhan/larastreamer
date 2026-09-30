@@ -23,6 +23,11 @@ final class StreamController
             return (new VideoNotFound)->toResponse();
         }
 
-        return $streamer->file($file)->stream();
+        $disk = $request->query('disk');
+        $pending = is_string($disk) && $disk !== ''
+            ? $streamer->disk($disk)->file($file)
+            : $streamer->file($file);
+
+        return $pending->stream();
     }
 }

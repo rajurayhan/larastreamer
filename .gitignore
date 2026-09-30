@@ -5,4 +5,5 @@
 /.phpunit.result.cache
 /.idea
 /.vscode
+/.worktrees/
 .phpunit.result.cache

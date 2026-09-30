@@ -6,6 +6,8 @@ namespace Raju\Streamer\Streaming;
 
 use DateTimeInterface;
 use Raju\Streamer\Contracts\Authorization;
+use Raju\Streamer\Contracts\DrmProvider;
+use Raju\Streamer\Drm\DrmConfiguration;
 use Raju\Streamer\Metadata\VideoMeta;
 use Raju\Streamer\Support\CallableAuthorization;
 use Symfony\Component\HttpFoundation\Response;
@@ -19,6 +21,10 @@ final class PendingStream
     private bool $usesDefaultPrefix = true;
 
     private ?Authorization $authorizer = null;
+
+    private DrmConfiguration|DrmProvider|null $drm = null;
+
+    private ?string $playbackTicket = null;
 
     /**
      * @var list<array{src: string, srclang?: string, label?: string, default?: bool}>
@@ -61,6 +67,20 @@ final class PendingStream
         return $this;
     }
 
+    public function drm(DrmConfiguration|DrmProvider $drm): self
+    {
+        $this->drm = $drm;
+
+        return $this;
+    }
+
+    public function playbackTicket(string $ticket): self
+    {
+        $this->playbackTicket = $ticket;
+
+        return $this;
+    }
+
     public function stream(): Response
     {
         return $this->streamer->stream($this);
@@ -71,12 +91,12 @@ final class PendingStream
         return $this->streamer->download($this);
     }
 
-    public function redirect(?DateTimeInterface $expires = null): Response
+    public function redirect(DateTimeInterface|int|null $expires = null): Response
     {
         return $this->streamer->redirect($this, $expires);
     }
 
-    public function temporaryUrl(?DateTimeInterface $expires = null): string
+    public function temporaryUrl(DateTimeInterface|int|null $expires = null): string
     {
         return $this->streamer->temporaryUrl($this, $expires);
     }
@@ -87,9 +107,9 @@ final class PendingStream
     }
 
     /**
-     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>}
+     * @return array{url: string, type: string, mime: string, expires_at: string|null, kind: string, captions: list<array{src: string, srclang?: string, label?: string, default?: bool}>, drm?: array<string, mixed>}
      */
-    public function embedData(?DateTimeInterface $expires = null): array
+    public function embedData(DateTimeInterface|int|null $expires = null): array
     {
         return $this->streamer->embedData($this, $expires);
     }
@@ -120,5 +140,15 @@ final class PendingStream
     public function authorizer(): ?Authorization
     {
         return $this->authorizer;
+    }
+
+    public function drmSource(): DrmConfiguration|DrmProvider|null
+    {
+        return $this->drm;
+    }
+
+    public function playbackTicketValue(): ?string
+    {
+        return $this->playbackTicket;
     }
 }

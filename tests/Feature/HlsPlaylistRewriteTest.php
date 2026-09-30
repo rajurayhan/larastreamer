@@ -78,3 +78,20 @@ it('serves a rewritten playlist from the signed route', function (): void {
         ->assertOk()
         ->assertHeader('Content-Type', 'application/vnd.apple.mpegurl');
 });
+
+it('leaves a FairPlay skd URI unchanged', function (): void {
+    $this->writeTextFixture('courses/fairplay.m3u8', <<<'M3U8'
+#EXTM3U
+#EXT-X-KEY:METHOD=SAMPLE-AES,KEYFORMAT="com.apple.streamingkeydelivery",URI="skd://fairplay.example.test/asset"
+#EXTINF:9.0,
+seg0.ts
+#EXT-X-ENDLIST
+M3U8);
+
+    $response = Streamer::disk('videos')->file('courses/fairplay.m3u8')->stream();
+    $body = (string) $response->getContent();
+
+    expect($body)
+        ->toContain('URI="skd://fairplay.example.test/asset"')
+        ->not->toContain('fairplay.example.test%2Fasset');
+});

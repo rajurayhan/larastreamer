@@ -47,7 +47,7 @@ final class LaravelFilesystem implements StorageResolver
 
         $detected = $localPath !== null
             ? $this->mimeTypes->detectFromFile($localPath)
-            : $adapter->mimeType($path);
+            : $this->mimeType($adapter, $path);
 
         $mime = $this->mimeTypes->guess(is_string($detected) ? $detected : null, $path);
 
@@ -299,6 +299,17 @@ final class LaravelFilesystem implements StorageResolver
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private function mimeType(Filesystem $adapter, string $path): ?string
+    {
+        if (! method_exists($adapter, 'mimeType')) {
+            return null;
+        }
+
+        $mime = $adapter->mimeType($path);
+
+        return is_string($mime) ? $mime : null;
     }
 
     private function adapter(string $disk): Filesystem

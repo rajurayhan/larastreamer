@@ -6,6 +6,8 @@
     'controls' => true,
     'mime' => null,
     'captions' => [],
+    'disk' => null,
+    'drm' => null,
 ])
 
 @php
@@ -21,9 +23,28 @@
         if (is_string($url) && str_contains(strtolower($url), '.m3u8')) {
             $embed['kind'] = 'hls';
         }
+
+        if ($drm instanceof \Raju\Streamer\Drm\DrmConfiguration && ! (bool) config('larastreamer.drm.enabled', true)) {
+            throw new \Raju\Streamer\Exceptions\DrmConfigurationException('DRM playback is disabled.');
+        }
+
+        if ($drm instanceof \Raju\Streamer\Drm\DrmConfiguration) {
+            $embed['drm'] = $drm->toArray();
+        }
     } elseif (is_string($src) && $src !== '') {
         try {
-            $embed = \Raju\Streamer\Facades\Streamer::file($src)->embedData();
+            $pending = is_string($disk) && $disk !== ''
+                ? \Raju\Streamer\Facades\Streamer::disk($disk)->file($src)
+                : \Raju\Streamer\Facades\Streamer::file($src);
+
+            if ($drm instanceof \Raju\Streamer\Drm\DrmConfiguration
+                || $drm instanceof \Raju\Streamer\Contracts\DrmProvider) {
+                $pending->drm($drm);
+            }
+
+            $embed = $pending->embedData();
+        } catch (\Raju\Streamer\Exceptions\DrmConfigurationException $exception) {
+            throw $exception;
         } catch (\Raju\Streamer\Exceptions\StreamException) {
             $embed = ['url' => null, 'mime' => $mime, 'kind' => 'progressive', 'captions' => []];
         }
@@ -37,9 +58,14 @@
 
     $isEmpty = $publicUrl === null || $publicUrl === '';
     $kind = is_string($embed['kind'] ?? null) ? $embed['kind'] : 'progressive';
-    $useHlsJs = ! $isEmpty && $kind === 'hls' && config('larastreamer.hls.player') === 'hlsjs';
+    $drmPayload = is_array($embed['drm'] ?? null) && $embed['drm'] !== [] ? $embed['drm'] : null;
+    $useShaka = ! $isEmpty && is_array($drmPayload);
+    $useHlsJs = ! $useShaka && ! $isEmpty && $kind === 'hls' && config('larastreamer.hls.player') === 'hlsjs';
     $hlsjsSrc = (string) config('larastreamer.hls.hlsjs_src');
+    $shakaSrc = (string) config('larastreamer.drm.shaka_src', 'https://cdn.jsdelivr.net/npm/shaka-player@5.2.9/dist/shaka-player.compiled.js');
+    $drmFallback = (string) config('larastreamer.drm.fallback_message', 'Protected playback is not supported on this device.');
     $videoId = 'larastreamer-player-'.bin2hex(random_bytes(4));
+    $fallbackId = $videoId.'-drm-status';
     $tracks = is_array($captions) && $captions !== [] ? $captions : ($embed['captions'] ?? []);
 @endphp
 
@@ -47,13 +73,14 @@
     id="{{ $videoId }}"
     @if ($isEmpty) data-empty="true" @endif
     @if ($useHlsJs) data-hls="true" data-src="{{ $publicUrl }}" @endif
+    @if ($useShaka) data-drm="true" aria-describedby="{{ $fallbackId }}" @endif
     {{ $attributes->merge([
         'controls' => $controls,
         'autoplay' => $autoplay,
         'poster' => $poster,
     ]) }}
 >
-    @if (! $isEmpty)
+    @if (! $isEmpty && ! $useShaka)
         <source src="{{ $publicUrl }}" @if (! empty($embed['mime'])) type="{{ $embed['mime'] }}" @endif>
     @endif
 
@@ -79,6 +106,17 @@
         @endif
     @endforeach
 </video>
+
+@if ($useShaka)
+    <p id="{{ $fallbackId }}" role="status" aria-live="polite" hidden>{{ $drmFallback }}</p>
+    @include('larastreamer::partials.shaka-player', compact(
+        'videoId',
+        'fallbackId',
+        'publicUrl',
+        'drmPayload',
+        'shakaSrc',
+    ))
+@endif
 
 @if ($useHlsJs && $hlsjsSrc !== '')
     <script>
